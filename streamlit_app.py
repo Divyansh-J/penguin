@@ -18,6 +18,7 @@ from pathlib import Path
 import logging
 from datetime import datetime
 import json
+import base64
 from typing import Optional, Dict, List, Tuple
 
 # Enhanced Visualization Classes
@@ -866,7 +867,6 @@ class StringMatcherApp:
         
         if logo_exists:
             # Encode logo as base64 for embedding
-            import base64
             with open(logo_path, "rb") as img_file:
                 logo_b64 = base64.b64encode(img_file.read()).decode()
             
@@ -1144,10 +1144,8 @@ class StringMatcherApp:
     def run_comprehensive_workflow(self, input_file: str, settings: Dict) -> bool:
         """Execute the comprehensive workflow with real-time status updates."""
         try:
-            # Copy input file to main directory with appropriate name
-            file_extension = Path(input_file).suffix
-            target_file = self.base_dir / f"uploaded_data{file_extension}"
-            shutil.copy2(input_file, target_file)
+            # Use the input file directly instead of copying to avoid network access issues
+            input_path = Path(input_file)
             
             # Import and run workflow directly
             sys.path.insert(0, str(self.base_dir))
@@ -1158,9 +1156,9 @@ class StringMatcherApp:
                 'message': 'Starting comprehensive workflow...'
             })
             
-            # Execute cdlist_v2.py directly
+            # Execute cdlist_v2.py directly with full path to avoid file not found errors
             cmd = [
-                sys.executable, "cdlist_v2.py", target_file.name,
+                sys.executable, "cdlist_v2.py", str(input_path),
                 "--cross-header-match",
                 "--record-output", "test_record_match.csv",
                 "--output", "hybrid_linkages.csv",
