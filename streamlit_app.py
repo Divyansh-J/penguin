@@ -607,7 +607,7 @@ class EnhancedVisualization:
 
 # Configure page settings
 st.set_page_config(
-    page_title="String Matcher Analysis Dashboard",
+    page_title="Penguin Analysis Dashboard",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -838,7 +838,7 @@ def load_custom_css():
     """, unsafe_allow_html=True)
 
 class StringMatcherApp:
-    """Main application class for String Matcher Dashboard."""
+    """Main application class for Penguin Dashboard."""
     
     def __init__(self):
         self.base_dir = Path("d:\\String Matcher\\Main")
@@ -861,7 +861,7 @@ class StringMatcherApp:
     def render_header(self):
         """Render the minimalist application header with company branding."""
         # Check if logo exists
-        logo_path = "d:/String Matcher/Main/image.png"
+        logo_path = "image.png"
         logo_exists = os.path.exists(logo_path)
         
         if logo_exists:
@@ -878,7 +878,7 @@ class StringMatcherApp:
         <div class="header-container">
             {logo_html}
             <div style="text-align: center;">
-                <h1 style="color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600;">String Matcher</h1>
+                <h1 style="color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600;">Penguin</h1>
             </div>
         </div>
         """, unsafe_allow_html=True)
