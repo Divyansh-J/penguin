@@ -123,231 +123,7 @@ class EnhancedVisualization:
         
         return fig
     
-    def _get_connection_color(self, confidence: float) -> str:
-        """Get optimized connection color based on confidence level."""
-        if confidence >= 80:
-            return 'rgba(34, 197, 94, 0.7)'  # Green for high confidence
-        elif confidence >= 60:
-            return 'rgba(59, 130, 246, 0.7)'  # Blue for medium confidence  
-        elif confidence >= 40:
-            return 'rgba(251, 191, 36, 0.7)'  # Yellow for low-medium confidence
-        else:
-            return 'rgba(239, 68, 68, 0.6)'  # Red for low confidence
-    
-    def _add_connection_lines_batch(self, fig: go.Figure, connections: list, table_positions: dict, table_width: int):
-        """Add connection lines in batches for better performance."""
-        # Group connections by confidence level for batch processing
-        confidence_groups = {'high': [], 'medium': [], 'low': [], 'very_low': []}
-        
-        for conn in connections:
-            confidence = conn['confidence']
-            if confidence >= 80:
-                confidence_groups['high'].append(conn)
-            elif confidence >= 60:
-                confidence_groups['medium'].append(conn)
-            elif confidence >= 40:
-                confidence_groups['low'].append(conn)
-            else:
-                confidence_groups['very_low'].append(conn)
-        
-        # Add connections by group for better rendering performance
-        for group_name, group_connections in confidence_groups.items():
-            if not group_connections:
-                continue
-                
-            # Batch similar connections together
-            x_coords = []
-            y_coords = []
-            hover_texts = []
-            
-            for conn in group_connections:
-                source_pos = table_positions[conn['source_table']]
-                target_pos = table_positions[conn['target_table']]
-                
-                # Calculate connection points
-                source_x = source_pos['x'] + table_width // 2
-                source_y = source_pos['y'] + 30
-                target_x = target_pos['x'] + table_width // 2
-                target_y = target_pos['y'] + 30
-                
-                x_coords.extend([source_x, target_x, None])  # None creates line breaks
-                y_coords.extend([source_y, target_y, None])
-                
-                hover_text = f"<b style='color: white;'>🔗 Connection</b><br><span style='color: #e5e7eb;'>{conn['source_table']}.{conn['source_column']}</span><br><span style='color: #9ca3af;'>↓</span><br><span style='color: #e5e7eb;'>{conn['target_table']}.{conn['target_column']}</span><br><b style='color: #60a5fa;'>Confidence:</b> <span style='color: #fbbf24;'>{conn['confidence']:.1f}%</span>"
-                hover_texts.extend([hover_text, hover_text, None])
-            
-            # Add single trace for all connections in this group
-            if x_coords:
-                sample_conn = group_connections[0]  # Use first connection for styling
-                # Simplified line styling for better readability
-                line_width = max(1, min(2.5, sample_conn['width'] * 0.7))  # Thinner lines
-                line_opacity = max(0.2, min(0.6, sample_conn['opacity'] * 0.8))  # More subtle
-                
-                fig.add_trace(go.Scatter(
-                    x=x_coords,
-                    y=y_coords,
-                    mode='lines',
-                    line=dict(
-                        color=sample_conn['color'],
-                        width=line_width,
-                        shape='linear',
-                        dash='solid' if sample_conn['confidence'] >= 70 else 'dot'  # Dash low confidence
-                    ),
-                    opacity=line_opacity,
-                    hovertemplate='%{text}<extra></extra>',
-                    text=hover_texts,
-                    showlegend=False,
-                    name=f'{group_name}_connections'
-                ))
-    
-    def _add_tables_batch(self, fig: go.Figure, tables: dict, table_positions: dict, table_width: int, max_columns_per_table: int = 15):
-        """Add table boxes and columns with optimized batch rendering and lazy loading."""
-        header_height = 50  # Increased for better readability
-        column_height = 35  # Increased for better text visibility
-        table_width = max(table_width, 200)  # Ensure minimum width for readability
-        
-        # Pre-calculate all table dimensions with column limiting
-        table_heights = {}
-        processed_tables = {}
-        for table_name, columns in tables.items():
-            # Limit columns for performance
-            display_columns = columns[:max_columns_per_table]
-            has_more = len(columns) > max_columns_per_table
-            
-            processed_tables[table_name] = {
-                'columns': display_columns,
-                'has_more': has_more,
-                'total_columns': len(columns)
-            }
-            
-            # Add extra height for "more" indicator if needed
-            extra_height = column_height if has_more else 0
-            table_heights[table_name] = header_height + len(display_columns) * column_height + 10 + extra_height
-        
-        # Batch add all table shapes first
-        shapes = []
-        annotations = []
-        clickable_traces = []
-        
-        for table_name in processed_tables.keys():
-            table_data = processed_tables[table_name]
-            columns = table_data['columns']
-            has_more = table_data['has_more']
-            total_columns = table_data['total_columns']
-            
-            pos = table_positions[table_name]
-            table_height = table_heights[table_name]
-            
-            # Add table shadow
-            shapes.append(dict(
-                type="rect",
-                x0=pos['x'] + 3, y0=pos['y'] - 3,
-                x1=pos['x'] + table_width + 3, y1=pos['y'] + table_height - 3,
-                fillcolor="rgba(0, 0, 0, 0.15)",
-                line=dict(width=0), layer="below"
-            ))
-            
-            # Add table background
-            shapes.append(dict(
-                type="rect",
-                x0=pos['x'], y0=pos['y'],
-                x1=pos['x'] + table_width, y1=pos['y'] + table_height,
-                fillcolor="rgba(20, 28, 48, 0.95)",
-                line=dict(color="rgba(91, 194, 231, 0.6)", width=1.5),
-                layer="below"
-            ))
-            
-            # Add table header background
-            shapes.append(dict(
-                type="rect",
-                x0=pos['x'], y0=pos['y'] + table_height - header_height,
-                x1=pos['x'] + table_width, y1=pos['y'] + table_height,
-                fillcolor="rgba(30, 58, 138, 0.9)",
-                line=dict(color="rgba(91, 194, 231, 0.4)", width=0),
-                layer="below"
-            ))
-            
-            # Add table name annotation with column count
-            table_display_name = f"{table_name} ({total_columns})" if has_more else table_name
-            annotations.append(dict(
-                x=pos['x'] + table_width // 2,
-                y=pos['y'] + table_height - header_height // 2,
-                text=f"<b style='font-weight: 700; letter-spacing: 0.02em; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);'>{table_display_name}</b>",
-                showarrow=False,
-                font=dict(
-                    color="rgba(255, 255, 255, 1.0)", size=18,
-                    family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                ),
-                bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"
-            ))
-            
-            # Add column annotations and clickable areas
-            column_x_coords = []
-            column_y_coords = []
-            column_names = []
-            column_hover_texts = []
-            
-            for i, column in enumerate(columns):
-                column_y = pos['y'] + table_height - header_height - (i + 1) * column_height + column_height // 2
-                display_column = column if len(column) <= 25 else column[:22] + "..."
-                
-                # Add column name annotation
-                annotations.append(dict(
-                    x=pos['x'] + 12, y=column_y,
-                    text=f"<span style='font-weight: 500; letter-spacing: 0.02em; text-shadow: 1px 1px 1px rgba(0,0,0,0.7);'>{display_column}</span>",
-                    showarrow=False,
-                    font=dict(
-                        color="rgba(255, 255, 255, 1.0)", size=15,
-                        family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                    ),
-                    bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)",
-                    xanchor="left"
-                ))
-                
-                # Collect clickable area data
-                column_x_coords.append(pos['x'] + table_width // 2)
-                column_y_coords.append(column_y)
-                column_names.append(f"{table_name}.{column}")
-                column_hover_texts.append(f"<b>{table_name}.{column}</b><br><i>Click to highlight related connections</i><br>Table: {table_name}")
-            
-            # Add "more columns" indicator if needed
-            if has_more:
-                more_y = pos['y'] + table_height - header_height - (len(columns) + 1) * column_height + column_height // 2
-                annotations.append(dict(
-                    x=pos['x'] + 12, y=more_y,
-                    text=f"<span style='font-weight: 400; font-style: italic; letter-spacing: 0.02em; text-shadow: 1px 1px 1px rgba(0,0,0,0.6);'>... +{total_columns - len(columns)} more</span>",
-                    showarrow=False,
-                    font=dict(
-                        color="rgba(200, 200, 200, 0.9)", size=13,
-                        family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                    ),
-                    bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)",
-                    xanchor="left"
-                ))
-            
-            # Add single trace for all columns in this table
-            if column_x_coords:
-                clickable_traces.append(go.Scatter(
-                    x=column_x_coords, y=column_y_coords,
-                    mode='markers',
-                    marker=dict(
-                        size=20, color='rgba(91, 194, 231, 0.1)',
-                        line=dict(color='rgba(91, 194, 231, 0.3)', width=1)
-                    ),
-                    hovertemplate='%{text}<extra></extra>',
-                    text=column_hover_texts,
-                    showlegend=False,
-                    name=f"{table_name}_columns",
-                    customdata=column_names,
-                    textfont=dict(size=1, color='rgba(0,0,0,0)')
-                ))
-        
-        # Batch add all shapes and annotations
-        fig.update_layout(shapes=shapes, annotations=annotations)
-        
-        # Add all clickable traces
-        for trace in clickable_traces:
-            fig.add_trace(trace)
+
     
     def create_confidence_distribution_chart(self, df: pd.DataFrame) -> go.Figure:
         """Create bar chart showing distribution of unified confidence scores."""
@@ -465,146 +241,7 @@ class EnhancedVisualization:
         
         return fig
     
-    def create_er_diagram(self, df: pd.DataFrame) -> go.Figure:
-        """Create an interactive ER diagram showing table relationships with optimized performance."""
-        import math
-        from collections import defaultdict
-        
-        # Calculate unified confidence scores if not present (optimized)
-        df_with_confidence = df.copy()
-        if 'unified_confidence' not in df_with_confidence.columns:
-            calculator = UnifiedScoreCalculator()
-            df_with_confidence['unified_confidence'] = df_with_confidence.apply(calculator.calculate_unified_score, axis=1)
-        
-        # Limit dataset size for performance (show top connections by confidence)
-        max_connections = 500  # Configurable limit
-        if len(df_with_confidence) > max_connections:
-            df_with_confidence = df_with_confidence.nlargest(max_connections, 'unified_confidence')
-            st.info(f"📊 Showing top {max_connections} connections by confidence for optimal performance. Total available: {len(df)}")
-        
-        # Optimized data structure building using defaultdict
-        tables = defaultdict(set)
-        connections = []
-        
-        # Vectorized data extraction for better performance
-        for _, row in df_with_confidence.iterrows():
-            source_table = row['source_sheet']
-            target_table = row['target_sheet']
-            source_column = row['source_column']
-            target_column = row['target_column']
-            confidence = row.get('unified_confidence', 0)
-            
-            # Add columns to tables
-            tables[source_table].add(source_column)
-            tables[target_table].add(target_column)
-            
-            # Store connection info with pre-calculated values
-            connections.append({
-                'source_table': source_table,
-                'source_column': source_column,
-                'target_table': target_table,
-                'target_column': target_column,
-                'confidence': confidence,
-                'color': self._get_connection_color(confidence),
-                'width': max(1.5, min(4, confidence / 20)),
-                'opacity': max(0.3, min(0.8, confidence / 100))
-            })
-        
-        # Convert to sorted lists once
-        tables = {table: sorted(list(columns)) for table, columns in tables.items()}
-        
-        # Optimized layout calculation
-        table_names = list(tables.keys())
-        num_tables = len(table_names)
-        
-        # Improved grid layout with better spacing
-        cols = min(3, math.ceil(math.sqrt(num_tables)))  # Limit columns for better readability
-        rows = math.ceil(num_tables / cols)
-        
-        table_positions = {}
-        table_width = 220  # Increased width for better text display
-        table_spacing_x = 350  # Increased spacing to reduce clutter
-        table_spacing_y = 280  # Increased vertical spacing
-        
-        # Pre-calculate all positions
-        for i, table_name in enumerate(table_names):
-            row = i // cols
-            col = i % cols
-            x = col * table_spacing_x + 80
-            y = row * table_spacing_y + 80
-            table_positions[table_name] = {'x': x, 'y': y}
-        
-        # Create figure with optimized rendering
-        fig = go.Figure()
-        
-        # Batch connection lines for better performance
-        self._add_connection_lines_batch(fig, connections, table_positions, table_width)
-        
-        # Add table boxes and columns with optimized rendering and lazy loading
-        max_columns_display = 12 if len(tables) > 10 else 15  # Reduce columns for complex diagrams
-        self._add_tables_batch(fig, tables, table_positions, table_width, max_columns_display)
-        
-        # Calculate figure dimensions
-        max_x = max(pos['x'] for pos in table_positions.values()) + table_width + 50
-        max_y = max(pos['y'] for pos in table_positions.values()) + 300  # Approximate max table height
-        
-        # Update layout with modern responsive design
-        fig.update_layout(
-            title=dict(
-                text="<b style='font-weight: 600; letter-spacing: -0.02em;'>Entity Relationship Diagram</b>",
-                font=dict(size=24, color="rgba(255, 255, 255, 0.95)", family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"),
-                x=0.5,
-                y=0.98,
-                xanchor='center',
-                yanchor='top'
-            ),
-            xaxis=dict(
-                range=[-50, max_x],
-                showgrid=False,
-                showticklabels=False,
-                zeroline=False,
-                fixedrange=False,  # Allow zooming for better responsiveness
-                showspikes=False
-            ),
-            yaxis=dict(
-                range=[-50, max_y],
-                showgrid=False,
-                showticklabels=False,
-                zeroline=False,
-                fixedrange=False,  # Allow zooming for better responsiveness
-                scaleanchor="x",
-                scaleratio=1,
-                showspikes=False
-            ),
-            plot_bgcolor="rgba(8, 12, 20, 1)",  # Darker, more modern background
-            paper_bgcolor="rgba(8, 12, 20, 1)",
-            font=dict(
-                color="rgba(255, 255, 255, 0.9)", 
-                family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                size=12
-            ),
-            height=max(650, max_y + 120),  # Slightly taller for better proportions
-            margin=dict(l=30, r=30, t=80, b=30),  # More balanced margins
-            dragmode="pan",
-            hovermode="closest",
-            showlegend=False,
-            # Add subtle grid for better visual structure
-            annotations=[
-                dict(
-                    text="<i style='color: rgba(255,255,255,0.4); font-size: 11px;'>💡 Click on column names to explore connections</i>",
-                    showarrow=False,
-                    x=0.5,
-                    y=-0.05,
-                    xref="paper",
-                    yref="paper",
-                    xanchor="center",
-                    yanchor="top",
-                    font=dict(size=11, color="rgba(255,255,255,0.6)")
-                )
-            ]
-        )
-        
-        return fig
+
 
 # Configure page settings
 st.set_page_config(
@@ -667,12 +304,22 @@ def load_custom_css():
         align-items: center;
         justify-content: center;
         margin-bottom: 1rem;
+        gap: 20px;
     }
     
     .logo-container img {
         max-height: 60px;
         width: auto;
         filter: brightness(0) invert(1);
+    }
+    
+    .penguin-logo {
+        max-height: 60px;
+        width: auto;
+        background-color: white;
+        padding: 5px;
+        border-radius: 8px;
+        filter: none !important;
     }
     
     /* Typography */
@@ -861,24 +508,37 @@ class StringMatcherApp:
     
     def render_header(self):
         """Render the minimalist application header with company branding."""
-        # Check if logo exists
+        # Check if logos exist
         logo_path = "image.png"
+        penguin_path = "penguin.png"
         logo_exists = os.path.exists(logo_path)
+        penguin_exists = os.path.exists(penguin_path)
         
-        if logo_exists:
-            # Encode logo as base64 for embedding
-            with open(logo_path, "rb") as img_file:
-                logo_b64 = base64.b64encode(img_file.read()).decode()
+        logo_html = ''
+        if logo_exists or penguin_exists:
+            logo_html = '<div class="logo-container">'
             
-            logo_html = f'<div class="logo-container"><img src="data:image/png;base64,{logo_b64}" alt="Company Logo"></div>'
-        else:
-            logo_html = ''
+            if logo_exists:
+                # Encode main logo as base64 for embedding
+                with open(logo_path, "rb") as img_file:
+                    logo_b64 = base64.b64encode(img_file.read()).decode()
+                logo_html += f'<img src="data:image/png;base64,{logo_b64}" alt="Company Logo">'
+            
+            logo_html += '</div>'
+        
+        # Handle penguin logo for the title section
+        penguin_logo_html = ""
+        if penguin_exists:
+            # Encode penguin logo as base64 for embedding
+            with open(penguin_path, "rb") as img_file:
+                penguin_b64 = base64.b64encode(img_file.read()).decode()
+            penguin_logo_html = f'<img src="data:image/png;base64,{penguin_b64}" alt="Penguin Logo" class="penguin-logo" style="height: 60px; margin-right: 15px; vertical-align: middle;">'
         
         st.markdown(f"""
         <div class="header-container">
             {logo_html}
-            <div style="text-align: center;">
-                <h1 style="color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600;">Penguin</h1>
+            <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
+                {penguin_logo_html}<h1 style="color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600; margin: 0;">Penguin</h1>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1127,7 +787,7 @@ class StringMatcherApp:
                     if score >= 90:
                         return 'High'
                     elif score >= 70:
-                        return 'Medium'
+                        return 'Med'
                     else:
                         return 'Low'
                 
@@ -1469,7 +1129,7 @@ class StringMatcherApp:
         # Chart selection dropdown
         chart_type = st.selectbox(
             "Select Chart Type:",
-            ["Unified Confidence Distribution", "Semantic Similarity Distribution", "Column Name Similarity Distribution", "ER Diagram"],
+            ["Unified Confidence Distribution", "Semantic Similarity Distribution", "Column Name Similarity Distribution"],
             help="Choose which analysis chart to display"
         )
         
@@ -1525,19 +1185,13 @@ class StringMatcherApp:
             
             # Create mapping from chart index to actual range
             ranges = [all_ranges[range_labels.index(label)] for label in filtered_ranges.index]
-        elif chart_type == "ER Diagram":
-            chart_fig = viz.create_er_diagram(df_categorized)
-            score_column = None
-            ranges = []
+
         
         # Display the chart
         selected_points = st.plotly_chart(chart_fig, use_container_width=True, on_select="rerun")
         
         # Handle drill-down functionality
-        if chart_type == "ER Diagram":
-            self.render_er_diagram_interactions(df_categorized, selected_points)
-        else:
-            self.render_drill_down_section(df_categorized, chart_type, score_column, ranges, selected_points)
+        self.render_drill_down_section(df_categorized, chart_type, score_column, ranges, selected_points)
         
         # Add exceptional matches section
         self.render_exceptional_matches_section(df_categorized)
@@ -1589,7 +1243,7 @@ class StringMatcherApp:
         with col1:
             st.markdown(f"**High Confidence** (≥{high_threshold}%): {df_recategorized[df_recategorized['confidence_category'] == 'high'].shape[0]} records")
         with col2:
-            st.markdown(f"**Medium Confidence** ({medium_threshold}-{high_threshold-1}%): {df_recategorized[df_recategorized['confidence_category'] == 'medium'].shape[0]} records")
+            st.markdown(f"**Med Confidence** ({medium_threshold}-{high_threshold-1}%): {df_recategorized[df_recategorized['confidence_category'] == 'medium'].shape[0]} records")
         with col3:
             st.markdown(f"**Low Confidence** (<{medium_threshold}%): {df_recategorized[df_recategorized['confidence_category'] == 'low'].shape[0]} records")
         
@@ -1739,9 +1393,7 @@ class StringMatcherApp:
     
     def render_drill_down_section(self, df: pd.DataFrame, chart_type: str, score_column: str, ranges: list, selected_points):
         """Render drill-down section showing filtered records based on chart selection."""
-        # Skip drill-down for ER diagram as it has different interaction model
-        if chart_type == "ER Diagram":
-            return
+
             
         if selected_points and hasattr(selected_points, 'selection') and selected_points.selection:
             # Get the selected bar index
@@ -1831,113 +1483,7 @@ class StringMatcherApp:
         else:
             st.info("💡 **Tip**: Click on any bar in the chart above to see detailed records for that range!")
     
-    def render_er_diagram_interactions(self, df: pd.DataFrame, selected_points):
-        """Handle ER diagram column click interactions and display related linkages with optimized performance."""
-        # Use cached unified confidence scores if available
-        if not hasattr(self, '_cached_df_with_confidence') or len(self._cached_df_with_confidence) != len(df):
-            df_with_confidence = df.copy()
-            if 'unified_confidence' not in df_with_confidence.columns:
-                calculator = UnifiedScoreCalculator()
-                df_with_confidence['unified_confidence'] = df_with_confidence.apply(calculator.calculate_unified_score, axis=1)
-            self._cached_df_with_confidence = df_with_confidence
-        else:
-            df_with_confidence = self._cached_df_with_confidence
-        
-        if selected_points and hasattr(selected_points, 'selection') and selected_points.selection:
-            try:
-                selected_indices = selected_points.selection.get('points', [])
-                if selected_indices:
-                    # Get the selected point's custom data (column identifier)
-                    point_data = selected_indices[0]
-                    if 'customdata' in point_data and point_data['customdata']:
-                        selected_column = point_data['customdata'][0]
-                        
-                        # Parse table and column name
-                        if '.' in selected_column:
-                            table_name, column_name = selected_column.split('.', 1)
-                            
-                            # Optimized filtering using boolean indexing with pre-computed masks
-                            source_mask = (df_with_confidence['source_sheet'] == table_name) & (df_with_confidence['source_column'] == column_name)
-                            target_mask = (df_with_confidence['target_sheet'] == table_name) & (df_with_confidence['target_column'] == column_name)
-                            related_linkages = df_with_confidence[source_mask | target_mask].copy()
-                            
-                            if len(related_linkages) > 0:
-                                st.markdown(f"##### 🔗 Linkages for Column: **{selected_column}**")
-                                
-                                # Summary metrics
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    st.metric(
-                                        "Total Connections",
-                                        len(related_linkages),
-                                        help=f"Number of linkages involving {selected_column}"
-                                    )
-                                
-                                with col2:
-                                    avg_confidence = related_linkages['unified_confidence'].mean()
-                                    st.metric(
-                                        "Average Confidence",
-                                        f"{avg_confidence:.1f}%",
-                                        help="Average unified confidence for these linkages"
-                                    )
-                                
-                                with col3:
-                                    high_confidence_count = len(related_linkages[related_linkages['unified_confidence'] >= 70])
-                                    st.metric(
-                                        "High Confidence",
-                                        high_confidence_count,
-                                        help="Linkages with confidence ≥ 70%"
-                                    )
-                                
-                                # Display related linkages table
-                                display_cols = ['source_sheet', 'source_column', 'target_sheet', 'target_column', 
-                                              'unified_confidence', 'semantic_similarity', 'column_name_similarity']
-                                
-                                available_cols = [col for col in display_cols if col in related_linkages.columns]
-                                display_df = related_linkages[available_cols].copy()
-                                
-                                # Round numerical columns
-                                for col in ['unified_confidence', 'semantic_similarity', 'column_name_similarity']:
-                                    if col in display_df.columns:
-                                        display_df[col] = display_df[col].round(2)
-                                
-                                # Sort by confidence
-                                display_df = display_df.sort_values(by='unified_confidence', ascending=False)
-                                
-                                # Style the dataframe to highlight the selected column
-                                def highlight_selected_column(row):
-                                    styles = [''] * len(row)
-                                    if (row['source_sheet'] == table_name and row['source_column'] == column_name) or \
-                                       (row['target_sheet'] == table_name and row['target_column'] == column_name):
-                                        styles = ['background-color: rgba(91, 194, 231, 0.2)'] * len(row)
-                                    return styles
-                                
-                                styled_df = display_df.style.apply(highlight_selected_column, axis=1)
-                                
-                                st.dataframe(
-                                    styled_df,
-                                    use_container_width=True,
-                                    height=min(400, len(display_df) * 35 + 50)
-                                )
-                                
-                                # Download option
-                                if len(related_linkages) > 0:
-                                    csv = display_df.to_csv(index=False)
-                                    st.download_button(
-                                        label=f"📥 Download {len(related_linkages)} Linkages",
-                                        data=csv,
-                                        file_name=f"linkages_{table_name}_{column_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                        mime="text/csv"
-                                    )
-                            else:
-                                st.info(f"No linkages found for column **{selected_column}**")
-                        else:
-                            st.warning("Invalid column selection format")
-            except Exception as e:
-                st.error(f"Error processing ER diagram selection: {str(e)}")
-        else:
-            st.info("💡 **Tip**: Click on any column name in the ER diagram above to see its related linkages!")
+
     
     def run(self):
         """Main application entry point."""
