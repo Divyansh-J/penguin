@@ -1033,8 +1033,21 @@ class StringMatcherApp:
         df_enhanced = df.copy()
         df_enhanced['unified_confidence'] = df_enhanced.apply(calculator.calculate_unified_score, axis=1)
         
-        # Apply basic categorization
-        df_categorized = visualizer.apply_basic_categorization(df_enhanced, 'unified_confidence')
+        # Apply dynamic categorization based on sidebar thresholds
+        results_config = viz_config.get('results_config', {})
+        high_threshold = results_config.get('high_threshold', 90)
+        medium_threshold = results_config.get('medium_threshold', 70)
+        
+        def get_dynamic_confidence_category(score: float) -> str:
+            if score >= high_threshold:
+                return 'high'
+            elif score >= medium_threshold:
+                return 'medium'
+            else:
+                return 'low'
+        
+        df_categorized = df_enhanced.copy()
+        df_categorized['confidence_category'] = df_categorized['unified_confidence'].apply(get_dynamic_confidence_category)
         
         # Create visualizations
         distribution_chart = visualizer.create_confidence_distribution_chart(df_categorized)
@@ -1091,12 +1104,17 @@ class StringMatcherApp:
                 help="Total number of column linkages identified"
             )
         
+        # Get threshold values for help text
+        results_config = viz_config.get('results_config', {})
+        high_threshold = results_config.get('high_threshold', 90)
+        medium_threshold = results_config.get('medium_threshold', 70)
+        
         with col2:
             high_count = len(df_categorized[df_categorized['confidence_category'] == 'high'])
             st.metric(
                 "High",
                 high_count,
-                help="Linkages with unified confidence ≥ 90%"
+                help=f"Linkages with unified confidence ≥ {high_threshold}%"
             )
         
         with col3:
@@ -1104,7 +1122,7 @@ class StringMatcherApp:
             st.metric(
                 "Medium",
                 medium_count,
-                help="Linkages with unified confidence 70-89%"
+                help=f"Linkages with unified confidence {medium_threshold}-{high_threshold-1}%"
             )
         
         with col4:
@@ -1112,7 +1130,7 @@ class StringMatcherApp:
             st.metric(
                 "Low",
                 low_count,
-                help="Linkages with unified confidence < 70%"
+                help=f"Linkages with unified confidence < {medium_threshold}%"
             )
         
         with col5:
