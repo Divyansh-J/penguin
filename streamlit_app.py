@@ -972,7 +972,7 @@ class StringMatcherApp:
                 )
             with col2:
                 medium_color = st.color_picker(
-                    "Medium",
+                    "Med",
                     value="#FF8C00",
                     help="Color for medium confidence matches"
                 )
